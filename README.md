@@ -1,2 +1,1 @@
-# p2punch
-A peer to peer 2d fighting game
+This project is inspired by https://www.youtube.com/watch?v=b5ovU9xeQ7c and https://www.youtube.com/watch?v=KnmhoexKxlg, and is an attempt at making a peer to peer 2d fighting game from scratch in C99
