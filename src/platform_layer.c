@@ -28,6 +28,7 @@ struct
   HMONITOR monitor;
   MONITORINFO monitor_info;
   WINDOWPLACEMENT normal_placement;
+  RECT client_rect;
 } PlatformState = {0};
 
 // NOTE: Resolutions must be sorted by the area of their bounding box
@@ -76,10 +77,27 @@ RefitToMonitor()
   {
     V2S normal_dim = SupportedResolutions[PlatformState.normal_dim_idx];
 
+    RECT window_rect = (RECT){ .left = 0, .right = normal_dim.x, .top = 0, .bottom = normal_dim.y };
+    AdjustWindowRectEx(&window_rect, NORMAL_WINDOW_STYLES & ~WS_OVERLAPPED, 0, 0);
+
     SetWindowLongW(PlatformState.window, GWL_STYLE, NORMAL_WINDOW_STYLES);
-    SetWindowPos(PlatformState.window, 0, 0, 0, normal_dim.x, normal_dim.y,
+    SetWindowPos(PlatformState.window, 0, 0, 0, 
+                 window_rect.right - window_rect.left, window_rect.bottom - window_rect.top,
                  SWP_NOMOVE | SWP_NOZORDER | SWP_NOOWNERZORDER | SWP_FRAMECHANGED);
   }
+
+	POINT client_origin = {0};
+	ClientToScreen(PlatformState.window, &client_origin);
+
+	RECT client_rect;
+	GetClientRect(PlatformState.window, &client_rect);
+
+	PlatformState.client_rect = (RECT){
+		.left   = client_origin.x,
+		.right  = client_origin.x + client_rect.right,
+		.top    = client_origin.y,
+		.bottom = client_origin.y + client_rect.bottom
+	};
 }
 
 void
@@ -138,7 +156,7 @@ Wndproc(HWND window, UINT msg, WPARAM wparam, LPARAM lparam)
 int
 wWinMain(HINSTANCE instance, HINSTANCE pre_instance, PWSTR cmd_line, int show_cmd)
 {
-  int result = 0;
+  int exit_code = 0;
 
   { /// Setup PlatformState
     V2S max_res = SupportedResolutions[ARRAY_SIZE(SupportedResolutions)-1];
@@ -156,7 +174,7 @@ wWinMain(HINSTANCE instance, HINSTANCE pre_instance, PWSTR cmd_line, int show_cm
         .hInstance     = instance,
         .hIcon         = 0,
         .hCursor       = 0,
-        .hbrBackground = 0,
+        .hbrBackground = CreateSolidBrush(0),
         .lpszMenuName  = 0,
         .lpszClassName = L"P2PUNCH",
     };
@@ -183,7 +201,7 @@ wWinMain(HINSTANCE instance, HINSTANCE pre_instance, PWSTR cmd_line, int show_cm
     {
       if (msg.message == WM_QUIT)
       {
-        result = (int)msg.wParam;
+        exit_code = (int)msg.wParam;
         goto end; // TODO
       }
       else if (msg.message == WM_SYSKEYDOWN && msg.wParam == VK_RETURN && ((msg.wParam>>30)&1) == 0 ||
@@ -194,8 +212,34 @@ wWinMain(HINSTANCE instance, HINSTANCE pre_instance, PWSTR cmd_line, int show_cm
       else Wndproc(PlatformState.window, msg.message, msg.wParam, msg.lParam);
     }
 
-    HDC dc = GetDC(PlatformState.window);
     V2S backbuffer_dim = SupportedResolutions[PlatformState.backbuffer_dim_idx];
+    for (umm i = 0; i < backbuffer_dim.x*backbuffer_dim.y; ++i) ((u32*)PlatformState.backbuffer)[i] = 0x00FF0000;
+
+		V2S client_dim = V2S(PlatformState.client_rect.right - PlatformState.client_rect.left,
+				                 PlatformState.client_rect.bottom - PlatformState.client_rect.top);
+
+		V2S client_offset = V2S_InvScale(V2S_Sub(client_dim, backbuffer_dim), 2);
+
+    POINT cursor_point;
+    GetCursorPos(&cursor_point);
+
+    V2S cursor_pos = V2S(cursor_point.x - PlatformState.client_rect.left, cursor_point.y - PlatformState.client_rect.top);
+		cursor_pos = V2S_Sub(cursor_pos, client_offset);
+
+    smm wid = 30;
+    for (smm j = -wid; j <= wid; ++j)
+    {
+      for (smm i = -wid; i <= wid; ++i)
+      {
+        V2S p = V2S_Add(cursor_pos, V2S(i, j));
+				if ((umm)p.x < backbuffer_dim.x && (umm)p.y < backbuffer_dim.y)
+				{
+					((u32*)PlatformState.backbuffer)[p.y*backbuffer_dim.x + p.x] = U32_MAX;
+				}
+      }
+		}
+
+    HDC dc = GetDC(PlatformState.window);
 
     BITMAPINFO bitmap_info = {
       .bmiHeader = {
@@ -208,18 +252,14 @@ wWinMain(HINSTANCE instance, HINSTANCE pre_instance, PWSTR cmd_line, int show_cm
       },
     };
 
-    RECT window_rect;
-    GetWindowRect(PlatformState.window, &window_rect);
-
-    V2S window_dim = V2S(window_rect.right  - window_rect.left, window_rect.bottom - window_rect.top);
-    ASSERT(backbuffer_dim.y <= window_dim.y);
-
-    SetDIBitsToDevice(dc, 0, 0, backbuffer_dim.x, backbuffer_dim.y, 0, 0, 0, backbuffer_dim.y,
-                     PlatformState.backbuffer, &bitmap_info, DIB_RGB_COLORS);
+    SetDIBitsToDevice(dc, client_offset.x, client_offset.y, backbuffer_dim.x, backbuffer_dim.y,
+				              0, 0, 0, backbuffer_dim.y,
+                      PlatformState.backbuffer, &bitmap_info, DIB_RGB_COLORS);
 
     ReleaseDC(PlatformState.window, dc);
+		InvalidateRect(PlatformState.window, 0, 0);
   }
 
   end:;
-  return result;
+  return exit_code;
 }

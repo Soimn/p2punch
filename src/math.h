@@ -20,7 +20,8 @@ typedef struct V2S
 
 #define V2S(X, Y) (V2S){ .x = (s32)(X), .y = (s32)(Y) }
 
-V2S V2S_Scale(V2S v, s32 n) { return V2S(v.x*n, v.y*n); }
+V2S V2S_Scale   (V2S v, s32 n) { return V2S(v.x*n, v.y*n); }
+V2S V2S_InvScale(V2S v, s32 n) { return V2S(v.x/n, v.y/n); }
 
 V2S V2S_Add     (V2S a, V2S b) { return V2S(a.x + b.x, a.y + b.y); }
 V2S V2S_Sub     (V2S a, V2S b) { return V2S(a.x - b.x, a.y - b.y); }
